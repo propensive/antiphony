@@ -32,7 +32,7 @@ case class ServletResponseWriter(r: HttpServletResponse) extends ResponseWriter 
   }
 }
 
-abstract class ServlerRequestHandler() extends HttpServlet with RequestHandler {
+abstract class ServletWrapper() extends HttpServlet with RequestHandler {
 
   override def doGet(
     servletRequest: HttpServletRequest,
