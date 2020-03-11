@@ -23,14 +23,8 @@ import scala.collection.JavaConverters._
 import scala.concurrent._
 import scala.annotation.tailrec
 
-sealed abstract class HttpException(url: String, code: Int) extends Exception
-
-case class NotFound(url: String) extends HttpException(url, 404)
-case class NotAuthorized(url: String) extends HttpException(url, 401)
-case class OtherException(url: String, code: Int) extends HttpException(url, code)
-
 trait RequestHandler {
-  def handle(implicit request: Request): Response
+  def handle(implicit request: Request): Response[_]
 }
 
 case class Request(
@@ -68,14 +62,6 @@ case class Cookie(domain: String, name: String, value: String, path: String, exp
 
 case class Redirect(url: String)
 
-object Response {
-  def apply[T: Responder](v: T, headers: Map[String, String] = Map(), cookies: List[Cookie] = Nil): Response = new Response(headers) {
-    type Type = T
-    val value: Type = v
-    val responder: Responder[Type] = implicitly[Responder[T]]
-  }
-}
-
 trait ResponseWriter {
   def appendBody(body: String)
   def setContentType(contentType: String)
@@ -83,35 +69,59 @@ trait ResponseWriter {
   def sendRedirect(url: String)
 }
 
-abstract class Response(val headers: Map[String, String]) {
-  type Type
-  val value: Type
-  val responder: Responder[Type]
-  def write(response: ResponseWriter): Unit = {
-    appendHeaders(response, headers)
-    responder.process(response, value)
-  }
-  def appendHeaders(response: ResponseWriter, headers: Map[String, String]): Unit = {
-    for(header <- headers) {
-      response.addHeader(header._1, header._2)
-    }
-  }
+class Response[Type: Responder](
+  val value: Type,
+  val cookies: List[Cookie],
+  val headers: Map[String, String],
+) {
+  val responder = implicitly[Responder[Type]]
+
+  def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers)
+  def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers)
+  def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap)
+  def withoutBody: Response[Unit] = setValue(())
+
+  def respond(writer: ResponseWriter): Unit = responder(writer, this)
+}
+
+object Response {
+  def apply[T: Responder](
+    v: T
+  ): Response[T] = new Response(v, Nil, Map())
 }
 
 object Responder {
-  implicit val stringResponder: Responder[String] = { (r, v) =>
-    r.setContentType("text/plain")
-    r.appendBody(v)
-  }
-  implicit val redirectResponder: Responder[Redirect] = (r, v) => r.sendRedirect(v.url)
 
-  implicit val jsonResponder: Responder[Json] = { (r, v) =>
-    r.setContentType("application/json")
-    r.appendBody(v.toString)
+  implicit val baseResponder: Responder[Unit] = { (writer, response) =>
+    for(header <- response.headers) {
+      writer.addHeader(header._1, header._2)
+    }
+  }
+
+  def withBaseResponder[T <: Any](responder: ValueResponder[T]): Responder[T] = { (writer, response) =>
+    baseResponder(writer, response.withoutBody)
+    responder(writer, response.value)
+  }
+
+  implicit val stringResponder: Responder[String] = withBaseResponder[String] { (writer, value) =>
+    writer.setContentType("text/plain")
+    writer.appendBody(value)
+  }
+
+  implicit val redirectResponder: Responder[Redirect] = withBaseResponder[Redirect] { (writer, value) => 
+    writer.sendRedirect(value.url)
+  }
+
+  implicit val jsonResponder: Responder[Json] = withBaseResponder[Json] { (writer, value) =>
+    writer.setContentType("application/json")
+    writer.appendBody(value.toString)
   }
 }
 
-trait Responder[T] { def process(response: ResponseWriter, value: T): Unit }
+trait Responder[T] { def apply(writer: ResponseWriter, response: Response[T]): Unit }
+
+trait ValueResponder[T] { def apply(writer: ResponseWriter, value: T): Unit }
+
 
 object Method {
   

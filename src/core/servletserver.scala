@@ -37,17 +37,29 @@ abstract class ServlerRequestHandler() extends HttpServlet with RequestHandler {
   override def doGet(
     servletRequest: HttpServletRequest,
     servletResponse: HttpServletResponse
-  ): Unit = {
-    val responseWriter = ServletResponseWriter(servletResponse)
-    handle(mapRequest(servletRequest)).write(responseWriter)
-  }
+  ): Unit = handleRequest(servletRequest, servletResponse)
 
   override def doPost(
     servletRequest: HttpServletRequest,
     servletResponse: HttpServletResponse
-  ): Unit = {
+  ): Unit = handleRequest(servletRequest, servletResponse)
+
+  override def doPut(
+    servletRequest: HttpServletRequest,
+    servletResponse: HttpServletResponse
+  ): Unit = handleRequest(servletRequest, servletResponse)
+
+  override def doDelete(
+    servletRequest: HttpServletRequest,
+    servletResponse: HttpServletResponse
+  ): Unit = handleRequest(servletRequest, servletResponse)
+  
+  def handleRequest(
+    servletRequest: HttpServletRequest,
+    servletResponse: HttpServletResponse
+  ) = {
     val responseWriter = ServletResponseWriter(servletResponse)
-    handle(mapRequest(servletRequest)).write(responseWriter)
+    handle(mapRequest(servletRequest)).respond(responseWriter)
   }
 
   private def mapRequest(request: HttpServletRequest): Request = {

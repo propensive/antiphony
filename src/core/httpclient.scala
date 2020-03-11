@@ -12,6 +12,12 @@ import scala.annotation.tailrec
 import java.net._
 import java.io._
 
+sealed abstract class HttpException(url: String, code: Int) extends Exception
+
+case class NotFound(url: String) extends HttpException(url, 404)
+case class NotAuthorized(url: String) extends HttpException(url, 401)
+case class OtherException(url: String, code: Int) extends HttpException(url, code)
+
 object Postable {
   implicit object string extends Postable[String]("text/plain") {
     def content(value: String): Array[Byte] = value.getBytes("UTF-8")
