@@ -7,6 +7,7 @@ import java.io.OutputStream
 import java.net.URI
 import java.io.ByteArrayOutputStream
 import scala.collection.JavaConverters._
+import LeightweightServer._
 
 object LeightweightServer {
 
@@ -60,6 +61,26 @@ object LeightweightServer {
       query.parameters
     )
   }
+
+  case class LightweightServerResponseWriter(exchange: HttpExchange) extends ResponseWriter {
+
+    def appendBody(body: String) = {
+      exchange.getResponseBody().write(body.getBytes())
+    }
+
+    def setContentType(contentType: String) = {
+      exchange.getRequestHeaders().add("ContentType", contentType)
+    }
+
+    def addHeader(key: String, value: String) = {
+      exchange.getRequestHeaders().add(key, value)
+    }
+
+    def sendRedirect(url: String) = {
+      ???
+    }
+  }
+
 }
 
 abstract class LeightweightServer(port: Int, context: String) extends RequestHandler {
@@ -67,7 +88,7 @@ abstract class LeightweightServer(port: Int, context: String) extends RequestHan
     val httpServer = HttpServer.create(new InetSocketAddress(port), 0)
 
     val handler: HttpHandler = { (exchange: HttpExchange) =>
-
+      val request = mapToRequest(exchange)
     }
 
     httpServer.createContext(context, handler)
