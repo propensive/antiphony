@@ -30,6 +30,8 @@ case class ServletResponseWriter(r: HttpServletResponse) extends ResponseWriter 
   def sendRedirect(url: String) = {
     r.sendRedirect(url)
   }
+
+  def close = {}
 }
 
 abstract class ServletWrapper() extends HttpServlet with RequestHandler {

@@ -67,6 +67,7 @@ trait ResponseWriter {
   def setContentType(contentType: String)
   def addHeader(key: String, value: String)
   def sendRedirect(url: String)
+  def close()
 }
 
 class Response[Type: Responder](

@@ -18,7 +18,8 @@ object LeightweightServer {
     val output = new ByteArrayOutputStream();
     val buffer = Array.ofDim[Byte](2048)
     var len = is.read(buffer)
-    while(len != 0) {
+    while(len > 0) {
+      println(len)
       output.write(buffer, 0, len)
       is.read(buffer)
     }
@@ -28,15 +29,19 @@ object LeightweightServer {
   def readQuery(exchange: HttpExchange): RequestQuery = {
     val uri = exchange.getRequestURI()
     val query = uri.getQuery()
-    val paramStrings = query.split("&")
-    val params = paramStrings.foldLeft(Map[String, List[String]]()) { (map, elem) =>
-      val split = elem.split("=")
-      val key = split(0)
-      val value = split(1)
-      val values = map.getOrElse(key, List.empty[String])
-      map + (key -> (value::values))
+    if(query != null) {
+      val paramStrings = query.split("&")
+      val params = paramStrings.foldLeft(Map[String, List[String]]()) { (map, elem) =>
+        val split = elem.split("=")
+        val key = split(0)
+        val value = split(1)
+        val values = map.getOrElse(key, List.empty[String])
+        map + (key -> (value::values))
+      }
+      RequestQuery(query, params)
+    } else {
+      RequestQuery(query, Map())
     }
-    RequestQuery(query, params)
   }
 
   def readHeaders(exchange: HttpExchange): Map[String, String] = {
@@ -50,13 +55,13 @@ object LeightweightServer {
     Request(
       Method.from(exchange.getRequestMethod()),
       exchange.getRequestHeaders().getFirst("ContentType"),
-      body.length,
+      body.length(),
       body,
       query.query,
       false,
-      exchange.getLocalAddress().getHostName(),
-      exchange.getLocalAddress().getPort(),
-      exchange.getHttpContext().getPath(),
+      exchange.getRequestURI().getHost(),
+      exchange.getRequestURI().getPort(),
+      exchange.getRequestURI().getPath(),
       headers,
       query.parameters
     )
@@ -64,34 +69,48 @@ object LeightweightServer {
 
   case class LightweightServerResponseWriter(exchange: HttpExchange) extends ResponseWriter {
 
-    def appendBody(body: String) = {
-      exchange.getResponseBody().write(body.getBytes())
+    def appendBody(payload: String) = {
+      exchange.sendResponseHeaders(200, payload.getBytes().length)
+      exchange.getResponseBody().write(payload.getBytes())
+      exchange.getResponseBody().flush()
     }
 
     def setContentType(contentType: String) = {
-      exchange.getRequestHeaders().add("ContentType", contentType)
+      exchange.getResponseHeaders().add("ContentType", contentType)
     }
 
     def addHeader(key: String, value: String) = {
-      exchange.getRequestHeaders().add(key, value)
+      exchange.getResponseHeaders().add(key, value)
     }
 
     def sendRedirect(url: String) = {
       ???
     }
+
+    def close() = {
+      exchange.close()
+    }
   }
 
 }
 
-abstract class LeightweightServer(port: Int, context: String) extends RequestHandler {
+abstract class LeightweightServer(port: Int, rootPath: String) extends RequestHandler {
 
     val httpServer = HttpServer.create(new InetSocketAddress(port), 0)
 
     val handler: HttpHandler = { (exchange: HttpExchange) =>
-      val request = mapToRequest(exchange)
+      try {
+        val request = mapToRequest(exchange)
+        println(request)
+        val responseWriter = LightweightServerResponseWriter(exchange)
+        handle(request).respond(responseWriter)
+      } catch {
+        case exception => exception.printStackTrace()
+      }
     }
-
-    httpServer.createContext(context, handler)
+  
+    val context = httpServer.createContext(rootPath)
+    context.setHandler(handler)
     httpServer.setExecutor(null)
     httpServer.start()
     
