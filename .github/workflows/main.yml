@@ -14,4 +14,5 @@ jobs:
 
     - name: Run a fury build
       run: |
-        fury 
+        ls
+        ./fury 
