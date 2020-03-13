@@ -55,7 +55,7 @@ object LeightweightServer {
     Request(
       Method.from(exchange.getRequestMethod()),
       exchange.getRequestHeaders().getFirst("ContentType"),
-      body.length(),
+      body.length,
       body,
       query.query,
       false,
@@ -105,7 +105,7 @@ abstract class LeightweightServer(port: Int, rootPath: String) extends RequestHa
         val responseWriter = LightweightServerResponseWriter(exchange)
         handle(request).respond(responseWriter)
       } catch {
-        case exception => exception.printStackTrace()
+        case exception: Throwable => exception.printStackTrace()
       }
     }
   

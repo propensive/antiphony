@@ -42,6 +42,13 @@ case class Request(
 
   def apply[T: ParamParser](param: Param[T]): Option[T] =
     implicitly[ParamParser[T]].parse(parameters.get(param.name).flatMap(_.headOption))
+
+  override def toString: String = {
+    s"""{
+      method: ${method},
+      contentType: ${contentType},
+      """
+  }
 }
 
 case class Param[T](name: String) {
