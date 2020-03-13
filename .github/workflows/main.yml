@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, lightweight-server-impl ]
+    branches: 
+      - master
+      - lightweight-server-impl
   pull_request:
     branches: [ master ]
 
