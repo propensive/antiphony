@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: 
+      - master
+      - lightweight-server-impl
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Run a fury build
+      run: |
+        ./fury 
