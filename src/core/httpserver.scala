@@ -46,8 +46,13 @@ case class Request(
   override def toString: String = {
     s"""{
       method: ${method},
-      contentType: ${contentType},
+      contentType: ${contentType}
       """
+  }
+
+  def splitPath = {
+    val splitPath = path.split("/").to[List]
+    if(splitPath.isEmpty) splitPath else splitPath.tail
   }
 }
 
@@ -78,22 +83,23 @@ trait ResponseWriter {
   def close()
 }
 
-class Response[Type: Responder](
+
+class Response[Type: Responder.ResponseResponder](
   val value: Type,
   val cookies: List[Cookie],
   val headers: Map[String, String],
 ) {
-  val responder = implicitly[Responder[Type]]
+  val responder = implicitly[Responder.ResponseResponder[Type]]
 
   def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers)
   def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers)
   def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap)
-
+  def mapValue[T: Responder.ResponseResponder](fn: Type => T): Response[T] = new Response(fn(this.value), this.cookies, this.headers)
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
 }
 
 object Response {
-  def apply[T: Responder](
+  def apply[T: Responder.ResponseResponder](
     v: T
   ): Response[T] = new Response(v, Nil, Map())
 }
@@ -101,19 +107,22 @@ object Response {
 object Responder {
   import ServerDomain._
 
+  type ResponseResponder[T] = Responder[Response[T]]
+  type ServerResultResponder[T] = ResponseResponder[Result[T]]
+
   def writeHeaders(writer: ResponseWriter, response: Response[_]): Unit = {
     for(header <- response.headers) {
       writer.addHeader(header._1, header._2)
     }
   }
-  implicit def resultResponder[T: ValueResponder]: Responder[ServerDomain.Result[T]] = { (writer, response) =>
+  implicit def resultResponder[T: Responder]: ServerResultResponder[T] = { (writer, response) =>
     writeHeaders(writer, response)
     response.value match {
       case Answer(v) => 
-        val responder = implicitly[ValueResponder[T]]
+        val responder = implicitly[Responder[T]]
         responder(writer, v)
       case Error(error) => 
-        val responder = implicitly[ValueResponder[String]]
+        val responder = implicitly[Responder[String]]
         writer.setStatus(error.status)
         responder(writer, error.responseContent)
       case Surprise(error) => 
@@ -121,30 +130,44 @@ object Responder {
     }
   }
 
-  implicit def simpleResponder[T <: Any : ValueResponder]: Responder[T] = { (writer, response) =>
+  implicit def simpleResponder[T <: Any : Responder]: ResponseResponder[T] = { (writer, response) =>
     writeHeaders(writer, response)
-    val responder = implicitly[ValueResponder[T]]
+    val responder = implicitly[Responder[T]]
     responder(writer, response.value)
   }
 
-  implicit val stringResponder: ValueResponder[String] = { (writer, value) =>
+  implicit val stringResponder: Responder[String] = { (writer, value) =>
     writer.setContentType("text/plain")
     writer.appendBody(value)
   }
 
-  implicit val redirectResponder: ValueResponder[Redirect] = { (writer, value) => 
+  implicit val redirectResponder: Responder[Redirect] = { (writer, value) => 
     writer.sendRedirect(value.url)
   }
 
-  implicit val jsonResponder: ValueResponder[Json] = { (writer, value) =>
+  implicit val jsonResponder: Responder[Json] = { (writer, value) =>
     writer.setContentType("application/json")
     writer.appendBody(value.toString)
   }
+
+  class CustomDomain[D <: Domain[_], Type: Responder](val domain: D) {
+    class ResultSupport(mitigator: domain.Mitigator[ServerDomain.type]) extends domain.Mitigator[ServerDomain.type] with ResponseResponder[domain.Result[Type]] {
+      override def handle[T](exception: domain.ExceptionType): ServerDomain.Result[T] = mitigator.handle(exception)
+      override def anticipate[T](throwable: Throwable): ServerDomain.Result[T] = mitigator.anticipate(throwable)
+      override def apply(w: ResponseWriter, r: Response[domain.Result[Type]]): Unit = {
+        val serverResponder = implicitly[ResponseResponder[ServerDomain.Result[Type]]]
+        serverResponder(w, r.mapValue(_.adapt(ServerDomain, this)))
+      }
+    }
+  }
+
+  def domainResultResponders[T: Responder](domain: Domain[_])(mitigatorFunc: domain.ExceptionType => ServerDomain.ExceptionType) = {
+    val customDomain = new CustomDomain[domain.type, T](domain)
+    new customDomain.ResultSupport(domain.mitigate(ServerDomain)(mitigatorFunc))
+  }
 }
 
-trait Responder[T] { def apply(writer: ResponseWriter, response: Response[T]): Unit }
-
-trait ValueResponder[T] { def apply(writer: ResponseWriter, value: T): Unit }
+trait Responder[T] { def apply(writer: ResponseWriter, response: T): Unit }
 
 sealed abstract class ServerException(val status: Int, val msg: String, val responseContent: String) extends Exception(msg) with Product with Serializable
 case class NotFoundError(content: String = "Page not found") extends ServerException(404, "Page not found", content)
@@ -152,6 +175,7 @@ case class InternalServerError(content: String = "Internal server error") extend
 //todo allow other response types for errors
 
 object ServerDomain extends Domain[ServerException]
+
 
 object Method {
   
