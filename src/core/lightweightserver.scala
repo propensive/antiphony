@@ -7,9 +7,9 @@ import java.io.OutputStream
 import java.net.URI
 import java.io.ByteArrayOutputStream
 import scala.collection.JavaConverters._
-import LeightweightServer._
+import LightweightServer._
 
-object LeightweightServer {
+object LightweightServer {
 
   case class RequestQuery(query: String, parameters: Map[String, List[String]]) 
 
@@ -54,7 +54,7 @@ object LeightweightServer {
     val headers = readHeaders(exchange)
     Request(
       Method.from(exchange.getRequestMethod()),
-      exchange.getRequestHeaders().getFirst("ContentType"),
+      exchange.getRequestHeaders().getFirst("content-type"),
       body.length,
       body,
       query.query,
@@ -76,7 +76,7 @@ object LeightweightServer {
     }
 
     def setContentType(contentType: String) = {
-      exchange.getResponseHeaders().add("ContentType", contentType)
+      exchange.getResponseHeaders().add("content-type", contentType)
     }
 
     def addHeader(key: String, value: String) = {
@@ -84,7 +84,8 @@ object LeightweightServer {
     }
 
     def sendRedirect(url: String) = {
-      ???
+      exchange.sendResponseHeaders(301, 0)
+      addHeader("Location", url)
     }
 
     def close() = {
@@ -94,7 +95,7 @@ object LeightweightServer {
 
 }
 
-abstract class LeightweightServer(port: Int, rootPath: String) extends RequestHandler {
+abstract class LightweightServer(port: Int, rootPath: String) extends RequestHandler {
 
     val httpServer = HttpServer.create(new InetSocketAddress(port), 0)
 
