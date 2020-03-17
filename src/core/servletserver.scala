@@ -15,6 +15,10 @@ import java.io._
 
 case class ServletResponseWriter(r: HttpServletResponse) extends ResponseWriter {
 
+  def setStatus(status: Int) = {
+    r.setStatus(status)
+  }
+
   def appendBody(body: String) = {
     r.getWriter().println(body)
   }

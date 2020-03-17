@@ -70,6 +70,7 @@ case class Cookie(domain: String, name: String, value: String, path: String, exp
 case class Redirect(url: String)
 
 trait ResponseWriter {
+  def setStatus(status: Int)
   def appendBody(body: String)
   def setContentType(contentType: String)
   def addHeader(key: String, value: String)
@@ -87,7 +88,6 @@ class Response[Type: Responder](
   def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers)
   def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers)
   def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap)
-  def withoutBody: Response[Unit] = setValue(())
 
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
 }
@@ -99,28 +99,44 @@ object Response {
 }
 
 object Responder {
+  import ServerDomain._
 
-  implicit val baseResponder: Responder[Unit] = { (writer, response) =>
+  def writeHeaders(writer: ResponseWriter, response: Response[_]): Unit = {
     for(header <- response.headers) {
       writer.addHeader(header._1, header._2)
     }
   }
+  implicit def resultResponder[T: ValueResponder]: Responder[ServerDomain.Result[T]] = { (writer, response) =>
+    writeHeaders(writer, response)
+    response.value match {
+      case Answer(v) => 
+        val responder = implicitly[ValueResponder[T]]
+        responder(writer, v)
+      case Error(error) => 
+        val responder = implicitly[ValueResponder[String]]
+        writer.setStatus(error.status)
+        responder(writer, error.responseContent)
+      case Surprise(error) => 
+        throw error
+    }
+  }
 
-  def withBaseResponder[T <: Any](responder: ValueResponder[T]): Responder[T] = { (writer, response) =>
-    baseResponder(writer, response.withoutBody)
+  implicit def simpleResponder[T <: Any : ValueResponder]: Responder[T] = { (writer, response) =>
+    writeHeaders(writer, response)
+    val responder = implicitly[ValueResponder[T]]
     responder(writer, response.value)
   }
 
-  implicit val stringResponder: Responder[String] = withBaseResponder[String] { (writer, value) =>
+  implicit val stringResponder: ValueResponder[String] = { (writer, value) =>
     writer.setContentType("text/plain")
     writer.appendBody(value)
   }
 
-  implicit val redirectResponder: Responder[Redirect] = withBaseResponder[Redirect] { (writer, value) => 
+  implicit val redirectResponder: ValueResponder[Redirect] = { (writer, value) => 
     writer.sendRedirect(value.url)
   }
 
-  implicit val jsonResponder: Responder[Json] = withBaseResponder[Json] { (writer, value) =>
+  implicit val jsonResponder: ValueResponder[Json] = { (writer, value) =>
     writer.setContentType("application/json")
     writer.appendBody(value.toString)
   }
@@ -130,6 +146,12 @@ trait Responder[T] { def apply(writer: ResponseWriter, response: Response[T]): U
 
 trait ValueResponder[T] { def apply(writer: ResponseWriter, value: T): Unit }
 
+sealed abstract class ServerException(val status: Int, val msg: String, val responseContent: String) extends Exception(msg) with Product with Serializable
+case class NotFoundError(content: String = "Page not found") extends ServerException(404, "Page not found", content)
+case class InternalServerError(content: String = "Internal server error") extends ServerException(500, "Internal server error", content)
+//todo allow other response types for errors
+
+object ServerDomain extends Domain[ServerException]
 
 object Method {
   

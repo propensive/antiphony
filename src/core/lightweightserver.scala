@@ -69,8 +69,10 @@ object LightweightServer {
 
   case class LightweightServerResponseWriter(exchange: HttpExchange) extends ResponseWriter {
 
+    var status = 200
+
     def appendBody(payload: String) = {
-      exchange.sendResponseHeaders(200, payload.getBytes().length)
+      exchange.sendResponseHeaders(status, payload.getBytes().length)
       exchange.getResponseBody().write(payload.getBytes())
       exchange.getResponseBody().flush()
     }
@@ -86,6 +88,10 @@ object LightweightServer {
     def sendRedirect(url: String) = {
       exchange.sendResponseHeaders(301, 0)
       addHeader("Location", url)
+    }
+
+    def setStatus(status: Int) = {
+      this.status = status
     }
 
     def close() = {
