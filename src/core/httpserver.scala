@@ -94,7 +94,12 @@ class Response[Type: Responder.ResponseResponder](
   def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers)
   def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers)
   def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap)
-  def mapValue[T: Responder.ResponseResponder](fn: Type => T): Response[T] = new Response(fn(this.value), this.cookies, this.headers)
+  def mapValue[T: Responder.ResponseResponder](fn: Type => T): Response[T] = {
+    System.out.println(this.value)
+    System.out.println("Mapping")
+    System.out.println(fn(this.value))
+    new Response(fn(this.value), this.cookies, this.headers)
+  }
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
 }
 
@@ -151,12 +156,10 @@ object Responder {
   }
 
   class CustomDomain[D <: Domain[_], Type: Responder](val domain: D) {
-    class ResultSupport(mitigator: domain.Mitigator[ServerDomain.type]) extends domain.Mitigator[ServerDomain.type] with ResponseResponder[domain.Result[Type]] {
-      override def handle[T](exception: domain.ExceptionType): ServerDomain.Result[T] = mitigator.handle(exception)
-      override def anticipate[T](throwable: Throwable): ServerDomain.Result[T] = mitigator.anticipate(throwable)
+    class ResultSupport(mitigator: domain.Mitigator[ServerDomain.type]) extends ResponseResponder[domain.Result[Type]] {
       override def apply(w: ResponseWriter, r: Response[domain.Result[Type]]): Unit = {
         val serverResponder = implicitly[ResponseResponder[ServerDomain.Result[Type]]]
-        serverResponder(w, r.mapValue(_.adapt(ServerDomain, this)))
+        serverResponder(w, r.mapValue(_.adapt(ServerDomain, mitigator)))
       }
     }
   }
