@@ -88,40 +88,45 @@ class Response[Type: Responder.ResponseResponder](
   val value: Type,
   val cookies: List[Cookie],
   val headers: Map[String, String],
+  val status: Int
 ) {
   val responder = implicitly[Responder.ResponseResponder[Type]]
 
-  def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers)
-  def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers)
-  def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap)
+  def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers, this.status)
+  def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers, this.status)
+  def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap, this.status)
   def mapValue[T: Responder.ResponseResponder](fn: Type => T): Response[T] = {
-    System.out.println(this.value)
-    System.out.println("Mapping")
-    System.out.println(fn(this.value))
-    new Response(fn(this.value), this.cookies, this.headers)
+    new Response(fn(this.value), this.cookies, this.headers, this.status)
   }
+  def setStatus(status: Int) = new Response(this.value, this.cookies, this.headers, status)
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
 }
+
 
 object Response {
   def apply[T: Responder.ResponseResponder](
     v: T
-  ): Response[T] = new Response(v, Nil, Map())
+  ): Response[T] = new Response(v, Nil, Map(), 200)
 }
 
 object Responder {
   import ServerDomain._
 
+  implicit def futureResponder[T: Responder](implicit responder: Responder[T], ec: ExecutionContext): Responder[Future[T]] = { 
+    (writer, future) => for (value <- future) responder(writer, value)
+  }
+
   type ResponseResponder[T] = Responder[Response[T]]
   type ServerResultResponder[T] = ResponseResponder[Result[T]]
 
-  def writeHeaders(writer: ResponseWriter, response: Response[_]): Unit = {
+  def prepareResponse(writer: ResponseWriter, response: Response[_]): Unit = {
+    writer.setStatus(response.status)
     for(header <- response.headers) {
       writer.addHeader(header._1, header._2)
     }
   }
   implicit def resultResponder[T: Responder]: ServerResultResponder[T] = { (writer, response) =>
-    writeHeaders(writer, response)
+    prepareResponse(writer, response)
     response.value match {
       case Answer(v) => 
         val responder = implicitly[Responder[T]]
@@ -136,7 +141,7 @@ object Responder {
   }
 
   implicit def simpleResponder[T <: Any : Responder]: ResponseResponder[T] = { (writer, response) =>
-    writeHeaders(writer, response)
+    prepareResponse(writer, response)
     val responder = implicitly[Responder[T]]
     responder(writer, response.value)
   }
