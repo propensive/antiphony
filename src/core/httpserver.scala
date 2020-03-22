@@ -94,12 +94,15 @@ class Response[Type: Responder.ResponseResponder](
 
   def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers, this.status)
   def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers, this.status)
-  def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap, this.status)
+  def setHeaders(headers: List[(String, String)]): Response[Type] = new Response(this.value, this.cookies, headers.toMap, this.status)
   def mapValue[T: Responder.ResponseResponder](fn: Type => T): Response[T] = {
     new Response(fn(this.value), this.cookies, this.headers, this.status)
   }
   def setStatus(status: Int) = new Response(this.value, this.cookies, this.headers, status)
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
+
+  def addCookies(cookies: Cookie*): Response[Type] = new Response(this.value, cookies.toList ++ this.cookies, this.headers, this.status)
+  def addHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, this.headers ++ headers.toMap, this.status)
 }
 
 
@@ -180,6 +183,7 @@ trait Responder[T] { def apply(writer: ResponseWriter, response: T): Unit }
 sealed abstract class ServerException(val status: Int, val msg: String, val responseContent: String) extends Exception(msg) with Product with Serializable
 case class NotFoundError(content: String = "Page not found") extends ServerException(404, "Page not found", content)
 case class InternalServerError(content: String = "Internal server error") extends ServerException(500, "Internal server error", content)
+case class UnauthorizedError(content: String = "Unauthorized") extends ServerException(401, "Unauthorized", content)
 //todo allow other response types for errors
 
 object ServerDomain extends Domain[ServerException]
