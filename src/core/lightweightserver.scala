@@ -8,6 +8,7 @@ import java.net.URI
 import java.io.ByteArrayOutputStream
 import scala.collection.JavaConverters._
 import LightweightServer._
+import HttpServerHelpers._
 
 object LightweightServer {
 
@@ -62,8 +63,8 @@ object LightweightServer {
       exchange.getRequestURI().getHost(),
       exchange.getRequestURI().getPort(),
       exchange.getRequestURI().getPath(),
-      headers,
-      query.parameters
+      mapKeysToLowerCase(headers),
+      mapKeysToLowerCase(query.parameters)
     )
   }
 
@@ -120,6 +121,5 @@ abstract class LightweightServer(port: Int, rootPath: String) extends RequestHan
     context.setHandler(handler)
     httpServer.setExecutor(null)
     httpServer.start()
-    
 }
 

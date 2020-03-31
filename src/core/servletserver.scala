@@ -12,6 +12,7 @@ import scala.annotation.tailrec
 
 import java.net._
 import java.io._
+import HttpServerHelpers._
 
 case class ServletResponseWriter(r: HttpServletResponse) extends ResponseWriter {
 
@@ -59,6 +60,11 @@ abstract class ServletWrapper() extends HttpServlet with RequestHandler {
     servletRequest: HttpServletRequest,
     servletResponse: HttpServletResponse
   ): Unit = handleRequest(servletRequest, servletResponse)
+
+  override def doOptions(
+    servletRequest: HttpServletRequest,
+    servletResponse: HttpServletResponse
+  ): Unit = handleRequest(servletRequest, servletResponse)
   
   def handleRequest(
     servletRequest: HttpServletRequest,
@@ -83,7 +89,8 @@ abstract class ServletWrapper() extends HttpServlet with RequestHandler {
     }
 
     val content = read()
-
+    val requestHeaders = request.getHeaderNames.asScala.to[List].map { k => k -> request.getHeader(k) }.toMap
+    val requestParams = request.getParameterNames.asScala.to[List].map { k => k -> request.getParameterValues(k).to[List] }.toMap
     Request(Method.from(request.getMethod),
       request.getContentType,
       request.getContentLength,
@@ -93,8 +100,8 @@ abstract class ServletWrapper() extends HttpServlet with RequestHandler {
       request.getServerName,
       request.getServerPort,
       request.getRequestURI,
-      request.getHeaderNames.asScala.to[List].map { k => k -> request.getHeader(k) }.toMap,
-      request.getParameterNames.asScala.to[List].map { k => k -> request.getParameterValues(k).to[List] }.toMap)
+      mapKeysToLowerCase(requestHeaders),
+      mapKeysToLowerCase(requestParams))
   }
 
 }

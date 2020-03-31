@@ -22,6 +22,11 @@ import euphemism._
 import scala.collection.JavaConverters._
 import scala.concurrent._
 import scala.annotation.tailrec
+import HttpServerHelpers._
+
+object HttpServerHelpers {
+    def mapKeysToLowerCase[T](map: Map[String, T]): Map[String, T] = map.map {case (k,v) => (k.toLowerCase -> v)}
+}
 
 trait RequestHandler {
   def handle(implicit request: Request): Response[_]
@@ -45,9 +50,18 @@ case class Request(
 
   override def toString: String = {
     s"""{
-      method: ${method},
-      contentType: ${contentType}
-      """
+      | method: ${method},
+      | contentType: ${contentType},
+      | length: ${length},
+      | content(max 10 bytes): ${content.take(10).toList},
+      | query: ${query},
+      | ssl: ${ssl},
+      | hostname: ${hostname},
+      | port: ${port}.
+      | path: ${path},
+      | httpHeaders: ${httpHeaders},
+      | parameters: ${parameters}
+      |}""".stripMargin
   }
 
   def splitPath = {
@@ -94,15 +108,20 @@ class Response[Type: Responder.ResponseResponder](
 
   def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers, this.status)
   def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers, this.status)
-  def setHeaders(headers: List[(String, String)]): Response[Type] = new Response(this.value, this.cookies, headers.toMap, this.status)
+  def setHeaders(headers: List[(String, String)]): Response[Type] = new Response(this.value, this.cookies, mapKeysToLowerCase(headers.toMap), this.status)
   def mapValue[T: Responder.ResponseResponder](fn: Type => T): Response[T] = {
     new Response(fn(this.value), this.cookies, this.headers, this.status)
   }
   def setStatus(status: Int) = new Response(this.value, this.cookies, this.headers, status)
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
 
-  def addCookies(cookies: Cookie*): Response[Type] = new Response(this.value, cookies.toList ++ this.cookies, this.headers, this.status)
-  def addHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, this.headers ++ headers.toMap, this.status)
+  def addCookies(cookies: Cookie*): Response[Type] = {
+    new Response(this.value, cookies.toList ++ this.cookies, this.headers, this.status)
+  }
+  
+  def addHeaders(headers: (String, String)*): Response[Type] = {
+    new Response(this.value, this.cookies, this.headers ++ mapKeysToLowerCase(headers.toMap), this.status)
+  }
 }
 
 
@@ -128,6 +147,8 @@ object Responder {
       writer.addHeader(header._1, header._2)
     }
   }
+
+  case class ErrorObj(msg: String)
   implicit def resultResponder[T: Responder]: ServerResultResponder[T] = { (writer, response) =>
     prepareResponse(writer, response)
     response.value match {
@@ -135,9 +156,9 @@ object Responder {
         val responder = implicitly[Responder[T]]
         responder(writer, v)
       case Error(error) => 
-        val responder = implicitly[Responder[String]]
+        val responder = implicitly[Responder[Json]]
         writer.setStatus(error.status)
-        responder(writer, error.responseContent)
+        responder(writer, Json(ErrorObj(error.responseContent)))
       case Surprise(error) => 
         throw error
     }
@@ -184,6 +205,7 @@ sealed abstract class ServerException(val status: Int, val msg: String, val resp
 case class NotFoundError(content: String = "Page not found") extends ServerException(404, "Page not found", content)
 case class InternalServerError(content: String = "Internal server error") extends ServerException(500, "Internal server error", content)
 case class UnauthorizedError(content: String = "Unauthorized") extends ServerException(401, "Unauthorized", content)
+case class BadRequest(content: String = "Bad request") extends ServerException(400, "Unauthorized", content)
 //todo allow other response types for errors
 
 object ServerDomain extends Domain[ServerException]
