@@ -195,7 +195,15 @@ object Responder {
 
   def domainResultResponders[T: Responder](domain: Domain[_])(mitigatorFunc: domain.ExceptionType => ServerDomain.ExceptionType) = {
     val customDomain = new CustomDomain[domain.type, T](domain)
-    new customDomain.ResultSupport(domain.mitigate(ServerDomain)(mitigatorFunc))
+    new customDomain.ResultSupport(
+      domain
+        .mitigate(ServerDomain)(mitigatorFunc)
+        .extenuate {
+          case err: Throwable =>
+            err.printStackTrace()
+            InternalServerError("Unexpected internal error")
+      }
+    )
   }
 }
 
