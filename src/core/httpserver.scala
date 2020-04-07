@@ -188,7 +188,14 @@ object Responder {
     class ResultSupport(mitigator: domain.Mitigator[ServerDomain.type]) extends ResponseResponder[domain.Result[Type]] {
       override def apply(w: ResponseWriter, r: Response[domain.Result[Type]]): Unit = {
         val serverResponder = implicitly[ResponseResponder[ServerDomain.Result[Type]]]
-        serverResponder(w, r.mapValue(_.adapt(ServerDomain, mitigator)))
+        val mappedResponse = r.mapValue(
+          _.adapt(ServerDomain, mitigator)
+          .extenuate {
+            case err: Throwable =>
+              err.printStackTrace()
+              InternalServerError("Unexpected internal error")
+        })
+        serverResponder(w, mappedResponse)
       }
     }
   }
@@ -196,13 +203,7 @@ object Responder {
   def domainResultResponders[T: Responder](domain: Domain[_])(mitigatorFunc: domain.ExceptionType => ServerDomain.ExceptionType) = {
     val customDomain = new CustomDomain[domain.type, T](domain)
     new customDomain.ResultSupport(
-      domain
-        .mitigate(ServerDomain)(mitigatorFunc)
-        .extenuate {
-          case err: Throwable =>
-            err.printStackTrace()
-            InternalServerError("Unexpected internal error")
-      }
+      domain.mitigate(ServerDomain)(mitigatorFunc)
     )
   }
 }
