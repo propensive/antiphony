@@ -214,8 +214,8 @@ sealed abstract class ServerException(val status: Int, val msg: String, val resp
 case class NotFoundError(content: String = "Page not found") extends ServerException(404, "Page not found", content)
 case class InternalServerError(content: String = "Internal server error") extends ServerException(500, "Internal server error", content)
 case class UnauthorizedError(content: String = "Unauthorized") extends ServerException(401, "Unauthorized", content)
-case class ForbiddenError(content: String = "Unauthorized") extends ServerException(403, "Unauthorized", content)
-case class BadRequest(content: String = "Bad request") extends ServerException(400, "Unauthorized", content)
+case class ForbiddenError(content: String = "Unauthorized") extends ServerException(403, "Forbidden", content)
+case class BadRequest(content: String = "Bad request") extends ServerException(400, "Bad request", content)
 //todo allow other response types for errors
 
 object ServerDomain extends Domain[ServerException]
