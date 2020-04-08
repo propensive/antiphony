@@ -184,6 +184,18 @@ object Responder {
     writer.appendBody(value.toString)
   }
 
+  implicit val unitResponder: Responder[Unit] = { (writer: ResponseWriter, _: Unit) => 
+    writer.setStatus(200)
+    writer.appendBody("")
+  }
+
+  case class RawHtml(html: String)
+
+  implicit val rawHtmlResponder: Responder[RawHtml] = { (writer: ResponseWriter, value: RawHtml) => 
+    writer.setContentType("text/html")
+    writer.appendBody(value.html)
+  }
+
   class CustomDomain[D <: Domain[_], Type: Responder](val domain: D) {
     class ResultSupport(mitigator: domain.Mitigator[ServerDomain.type]) extends ResponseResponder[domain.Result[Type]] {
       override def apply(w: ResponseWriter, r: Response[domain.Result[Type]]): Unit = {
@@ -220,7 +232,6 @@ case class BadRequest(content: String = "Bad request") extends ServerException(4
 
 object ServerDomain extends Domain[ServerException]
 
-
 object Method {
   
   def from(str: String): Method = str match {
@@ -244,4 +255,43 @@ object Method {
   final case object Options extends Method("OPTIONS")
   final case object Trace extends Method("TRACE")
   final case object Patch extends Method("PATCH")
+}
+
+object HandlerHelpers {
+  object & { def unapply(request: Request): Some[(Request, Request)] = Some((request, request)) }
+  object Path {
+    def unapply(request: Request): Option[List[String]] = Some(request.splitPath)
+  }
+
+  class WithHeader(header: String) {
+    def unapply(request: Request): Option[String] = {
+      request.httpHeaders.get(header)
+    }
+  }
+  def WithHeader(header: String) = new WithHeader(header)
+
+  class WithParam(param: String) {
+    def unapply(request: Request): Option[String] = {
+      request.parameters.get(param).flatMap(_.headOption)
+    } 
+  }
+
+  def WithParam(param: String) = new WithParam(param)
+  
+  class WithMethod() {
+    def unapply(request: Request): Option[Method] = Some(request.method)
+  }
+
+  val WithMethod = new WithMethod()
+
+  def WithFlagParam(param: String) = new WithFlagParam(param)
+
+  class WithFlagParam(param: String) {
+    def unapply(request: Request): Boolean = {
+      request.parameters.get(param)
+        .flatMap(_.headOption)
+        .map(_.equals("true"))
+        .getOrElse(false)
+    }
+  }
 }
