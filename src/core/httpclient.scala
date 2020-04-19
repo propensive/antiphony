@@ -46,7 +46,7 @@ object Http extends Domain[HttpException] {
     new URL(url).openConnection match {
       case conn: HttpURLConnection =>
         conn.setRequestMethod(method)
-        conn.setRequestProperty("Content-Type", implicitly[Postable[T]].contentType)
+        if(method == "POST") conn.setRequestProperty("Content-Type", implicitly[Postable[T]].contentType)
         conn.setRequestProperty("User-Agent", "Furore 1.0.0")
         headers.foreach { case HttpHeader(key, value) => conn.setRequestProperty(key, value) }
         
