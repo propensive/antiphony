@@ -134,8 +134,13 @@ object Response {
 object Responder {
   import ServerDomain._
 
+  import scala.concurrent.duration._
+  val DefaultFutureTimeout = 300.days // we don't want any timeouts as for now
   implicit def futureResponder[T: Responder](implicit responder: Responder[T], ec: ExecutionContext): Responder[Future[T]] = { 
-    (writer, future) => for (value <- future) responder(writer, value)
+    (writer, future) => {
+      Await.ready(future, DefaultFutureTimeout)
+      for (value <- future) responder(writer, value)
+    }
   }
 
   type ResponseResponder[T] = Responder[Response[T]]
