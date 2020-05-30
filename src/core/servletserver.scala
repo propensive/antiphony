@@ -1,4 +1,3 @@
-
 package antiphony
 
 import quarantine._
@@ -13,75 +12,38 @@ import scala.annotation.tailrec
 import java.net._
 import java.io._
 
-case class ServletResponseWriter(r: HttpServletResponse) extends ResponseWriter {
-
-  def appendBody(body: String) = {
-    r.getWriter().println(body)
-  }
-
-  def setContentType(contentType: String) = {
-    r.setContentType(contentType)
-  }
-
-  def addHeader(key: String, value: String) = {
-    r.addHeader(key, value)
-  }
-
-  def sendRedirect(url: String) = {
-    r.sendRedirect(url)
-  }
+case class ServletResponseWriter(response: HttpServletResponse) extends ResponseWriter {
+  def sendBody(body: String) = response.getWriter().println(body)
+  def setContentType(contentType: String) = response.setContentType(contentType)
+  def addHeader(key: String, value: String) = response.addHeader(key, value)
+  def sendRedirect(url: String) = response.sendRedirect(url)
+  def setStatus(code: Int): Unit = response.setStatus(code)
 }
 
 abstract class ServletWrapper() extends HttpServlet with RequestHandler {
 
-  override def doGet(
-    servletRequest: HttpServletRequest,
-    servletResponse: HttpServletResponse
-  ): Unit = handleRequest(servletRequest, servletResponse)
+  override def doGet(request: HttpServletRequest, response: HttpServletResponse): Unit =
+    handle(request, response)
 
-  override def doPost(
-    servletRequest: HttpServletRequest,
-    servletResponse: HttpServletResponse
-  ): Unit = handleRequest(servletRequest, servletResponse)
+  override def doPost(request: HttpServletRequest, response: HttpServletResponse): Unit =
+    handle(request, response)
 
-  override def doPut(
-    servletRequest: HttpServletRequest,
-    servletResponse: HttpServletResponse
-  ): Unit = handleRequest(servletRequest, servletResponse)
+  override def doPut(request: HttpServletRequest, response: HttpServletResponse): Unit =
+    handle(request, response)
 
-  override def doDelete(
-    servletRequest: HttpServletRequest,
-    servletResponse: HttpServletResponse
-  ): Unit = handleRequest(servletRequest, servletResponse)
+  override def doDelete(request: HttpServletRequest, response: HttpServletResponse): Unit =
+    handle(request, response)
   
-  def handleRequest(
-    servletRequest: HttpServletRequest,
-    servletResponse: HttpServletResponse
-  ) = {
-    val responseWriter = ServletResponseWriter(servletResponse)
-    handle(mapRequest(servletRequest)).respond(responseWriter)
+  def handle(request: HttpServletRequest, response: HttpServletResponse): Unit = {
+    val writer = ServletResponseWriter(response)
+    handle(makeRequest(request)).respond(writer)
   }
 
-  private def mapRequest(request: HttpServletRequest): Request = {
-    val in = request.getInputStream
-    val data = new ByteArrayOutputStream()
-    val buf = new Array[Byte](65536)
-
-    @tailrec
-    def read(): Array[Byte] = {
-      val bytes = in.read(buf, 0, buf.length)
-      if(bytes < 0) data.toByteArray else {
-        data.write(buf, 0, bytes)
-        read()
-      }
-    }
-
-    val content = read()
-
-    Request(Method.from(request.getMethod),
+  private def makeRequest(request: HttpServletRequest): Request = {
+    Request(Method.unapply(request.getMethod).get,
       request.getContentType,
       request.getContentLength,
-      content,
+      Request.slurp(request.getInputStream),
       request.getQueryString,
       request.isSecure,
       request.getServerName,
@@ -90,5 +52,4 @@ abstract class ServletWrapper() extends HttpServlet with RequestHandler {
       request.getHeaderNames.asScala.to[List].map { k => k -> request.getHeader(k) }.toMap,
       request.getParameterNames.asScala.to[List].map { k => k -> request.getParameterValues(k).to[List] }.toMap)
   }
-
 }

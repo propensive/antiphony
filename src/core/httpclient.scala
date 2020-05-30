@@ -37,8 +37,6 @@ object Postable {
 
 abstract class Postable[T](val contentType: String) { def content(value: T): Array[Byte] }
 
-case class HttpHeader(key: String, value: String)
-
 object Http extends Domain[HttpException] {
 
   def post[T: Postable](url: String, content: T, headers: Set[HttpHeader]): Result[Array[Byte]] =

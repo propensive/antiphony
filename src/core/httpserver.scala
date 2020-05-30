@@ -1,19 +1,3 @@
-/*
-   ╔═══════════════════════════════════════════════════════════════════════════════════════════════════════════╗
-   ║ Fury, version 0.7.14. Copyright 2018-19 Jon Pretty, Propensive OÜ.                                         ║
-   ║                                                                                                           ║
-   ║ The primary distribution site is: https://propensive.com/                                                 ║
-   ║                                                                                                           ║
-   ║ Licensed under  the Apache License,  Version 2.0 (the  "License"); you  may not use  this file  except in ║
-   ║ compliance with the License. You may obtain a copy of the License at                                      ║
-   ║                                                                                                           ║
-   ║     http://www.apache.org/licenses/LICENSE-2.0                                                            ║
-   ║                                                                                                           ║
-   ║ Unless required  by applicable law  or agreed to in  writing, software  distributed under the  License is ║
-   ║ distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. ║
-   ║ See the License for the specific language governing permissions and limitations under the License.        ║
-   ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-*/
 package antiphony
 
 import quarantine._
@@ -22,23 +6,40 @@ import euphemism._
 import scala.collection.JavaConverters._
 import scala.concurrent._
 import scala.annotation.tailrec
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
-trait RequestHandler {
-  def handle(implicit request: Request): Response[_]
+trait RequestHandler { def handle(request: Request): Response[_] }
+
+object Request {
+  def slurp(in: InputStream): Array[Byte] = {
+    val data: ByteArrayOutputStream = new ByteArrayOutputStream()
+    val buf: Array[Byte] = new Array(65536)
+
+    @tailrec
+    def read(): Array[Byte] = {
+      val bytes = in.read(buf, 0, buf.length)
+      if(bytes < 0) data.toByteArray else {
+        data.write(buf, 0, bytes)
+        read()
+      }
+    }
+
+    read()
+  }
 }
 
-case class Request(
-  method: Method,
-  contentType: String,
-  length: Int,
-  content: Array[Byte],
-  query: String,
-  ssl: Boolean,
-  hostname: String,
-  port: Int,
-  path: String,
-  httpHeaders: Map[String, String],
-  parameters: Map[String, List[String]]) {
+case class Request(method: Method,
+                   contentType: String,
+                   length: Int,
+                   content: Array[Byte],
+                   query: String,
+                   ssl: Boolean,
+                   hostname: String,
+                   port: Int,
+                   path: String,
+                   httpHeaders: Map[String, String],
+                   parameters: Map[String, List[String]]) {
 
   def apply[T: ParamParser](param: Param[T]): Option[T] =
     implicitly[ParamParser[T]].parse(parameters.get(param.name).flatMap(_.headOption))
@@ -63,78 +64,69 @@ case class Cookie(domain: String, name: String, value: String, path: String, exp
 case class Redirect(url: String)
 
 trait ResponseWriter {
-  def appendBody(body: String)
-  def setContentType(contentType: String)
-  def addHeader(key: String, value: String)
-  def sendRedirect(url: String)
+  def sendBody(body: String): Unit
+  def setContentType(contentType: String): Unit
+  def addHeader(key: String, value: String): Unit
+  def sendRedirect(url: String): Unit
+  def setStatus(code: Int): Unit
 }
 
-class Response[Type: Responder](
-  val value: Type,
-  val cookies: List[Cookie],
-  val headers: Map[String, String],
-) {
-  val responder = implicitly[Responder[Type]]
+case class HttpHeader(key: String, value: String)
 
-  def setValue[T: Responder](value: T): Response[T] = new Response(value, this.cookies, this.headers)
-  def setCookies(cookies: List[Cookie]): Response[Type] = new Response(this.value, cookies, this.headers)
-  def setHeaders(headers: (String, String)*): Response[Type] = new Response(this.value, this.cookies, headers.toMap)
-  def withoutBody: Response[Unit] = setValue(())
+case class Response[Type: Responder](value: Type, cookies: Vector[Cookie], headers: Vector[HttpHeader]) {
+  private[this] def responder = implicitly[Responder[Type]]
+
+  def +(cookie: Cookie): Response[Type] = copy(cookies = cookies :+ cookie)
+  def +(header: HttpHeader): Response[Type] = copy(headers = headers :+ header)
 
   def respond(writer: ResponseWriter): Unit = responder(writer, this)
 }
 
-object Response {
-  def apply[T: Responder](
-    v: T
-  ): Response[T] = new Response(v, Nil, Map())
-}
+object Response { def apply[T: Responder](value: T): Response[T] = Response(value, Vector(), Vector()) }
 
 object Responder {
 
-  implicit val baseResponder: Responder[Unit] = { (writer, response) =>
-    for(header <- response.headers) {
-      writer.addHeader(header._1, header._2)
-    }
-  }
+  def writeHeaders(response: Response[_], writer: ResponseWriter): Unit =
+    response.headers.foreach { header => writer.addHeader(header.key, header.value) }
 
-  def withBaseResponder[T <: Any](responder: ValueResponder[T]): Responder[T] = { (writer, response) =>
-    baseResponder(writer, response.withoutBody)
-    responder(writer, response.value)
-  }
-
-  implicit val stringResponder: Responder[String] = withBaseResponder[String] { (writer, value) =>
+  implicit val unit: Responder[Unit] = { (writer, response) =>
+    writeHeaders(response, writer)
     writer.setContentType("text/plain")
-    writer.appendBody(value)
   }
 
-  implicit val redirectResponder: Responder[Redirect] = withBaseResponder[Redirect] { (writer, value) => 
-    writer.sendRedirect(value.url)
+  implicit val string: Responder[String] = { (writer, response) =>
+    writeHeaders(response, writer)
+    writer.setContentType("text/plain")
+    writer.sendBody(response.value)
   }
 
-  implicit val jsonResponder: Responder[Json] = withBaseResponder[Json] { (writer, value) =>
+  implicit val redirect: Responder[Redirect] = { (writer, response) =>
+    writeHeaders(response, writer)
+    writer.sendRedirect(response.value.url)
+  }
+
+  implicit val json: Responder[Json] = { (writer, response) =>
+    writeHeaders(response, writer)
     writer.setContentType("application/json")
-    writer.appendBody(value.toString)
+    writer.sendBody(response.value.toString)
   }
 }
 
 trait Responder[T] { def apply(writer: ResponseWriter, response: Response[T]): Unit }
 
-trait ValueResponder[T] { def apply(writer: ResponseWriter, value: T): Unit }
-
-
 object Method {
   
-  def from(str: String): Method = str match {
-    case "GET" => Get
-    case "HEAD" => Head
-    case "POST" => Post
-    case "PUT" => Put
-    case "DELETE" => Delete
-    case "CONNECT" => Connect
-    case "OPTIONS" => Options
-    case "TRACE" => Trace
-    case "PATCH" => Patch
+  def unapply(str: String): Option[Method] = str match {
+    case "GET"     => Some(Get)
+    case "HEAD"    => Some(Head)
+    case "POST"    => Some(Post)
+    case "PUT"     => Some(Put)
+    case "DELETE"  => Some(Delete)
+    case "CONNECT" => Some(Connect)
+    case "OPTIONS" => Some(Options)
+    case "TRACE"   => Some(Trace)
+    case "PATCH"   => Some(Patch)
+    case _         => None
   }
   
   final case object Get extends Method("GET")
