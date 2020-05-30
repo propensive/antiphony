@@ -2,6 +2,7 @@ package antiphony
 
 import quarantine._
 import euphemism._
+import gastronomy._
 
 import javax.servlet._, http._
 
@@ -40,16 +41,19 @@ abstract class ServletWrapper() extends HttpServlet with RequestHandler {
   }
 
   private def makeRequest(request: HttpServletRequest): Request = {
+
+    val length = request.getContentLength
+
     Request(Method.unapply(request.getMethod).get,
       request.getContentType,
-      request.getContentLength,
-      Request.slurp(request.getInputStream),
+      if(length < 0) None else Some(length),
+      Request.stream(request.getInputStream),
       request.getQueryString,
       request.isSecure,
       request.getServerName,
       request.getServerPort,
       request.getRequestURI,
       request.getHeaderNames.asScala.to[List].map { k => k -> request.getHeader(k) }.toMap,
-      request.getParameterNames.asScala.to[List].map { k => k -> request.getParameterValues(k).to[List] }.toMap)
+      request.getParameterNames.asScala.to[List].map { k => k -> request.getParameterValues(k)(0) }.toMap)
   }
 }

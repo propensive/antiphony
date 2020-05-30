@@ -2,6 +2,7 @@ package antiphony
 
 import quarantine._
 import euphemism._
+import gastronomy._
 
 import scala.collection.JavaConverters._
 import scala.concurrent._
@@ -12,17 +13,12 @@ import java.io.InputStream
 trait RequestHandler { def handle(request: Request): Response[_] }
 
 object Request {
-  def slurp(in: InputStream): Array[Byte] = {
-    val data: ByteArrayOutputStream = new ByteArrayOutputStream()
+  def stream(in: InputStream): Stream[Bytes] = {
     val buf: Array[Byte] = new Array(65536)
 
-    @tailrec
-    def read(): Array[Byte] = {
+    def read(): Stream[Bytes] = {
       val bytes = in.read(buf, 0, buf.length)
-      if(bytes < 0) data.toByteArray else {
-        data.write(buf, 0, bytes)
-        read()
-      }
+      if(bytes < 0) Stream.empty[Bytes] else Bytes(buf.take(bytes)) #:: read()
     }
 
     read()
@@ -31,18 +27,18 @@ object Request {
 
 case class Request(method: Method,
                    contentType: String,
-                   length: Int,
-                   content: Array[Byte],
+                   length: Option[Int],
+                   body: Stream[Bytes],
                    query: String,
                    ssl: Boolean,
                    hostname: String,
                    port: Int,
                    path: String,
                    httpHeaders: Map[String, String],
-                   parameters: Map[String, List[String]]) {
+                   params: Map[String, String]) {
 
   def apply[T: ParamParser](param: Param[T]): Option[T] =
-    implicitly[ParamParser[T]].parse(parameters.get(param.name).flatMap(_.headOption))
+    implicitly[ParamParser[T]].parse(params.get(param.name))
 }
 
 case class Param[T](name: String) {
