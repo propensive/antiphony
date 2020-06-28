@@ -107,7 +107,7 @@ case class HttpServer(handler: Request => Response[_]) extends RequestHandler {
         case e: Exception =>
           writer.setStatus(500)
           writer.setContentType("text/plain")
-          writer.sendBody("Internal server error: "+e+" at "+e.getStackTrace.mkString("\n"))
+          writer.sendBody(s"Internal server error: $e at ${e.getStackTrace.mkString("\n  at ")}")
       }
     }
   }
